@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = F, warning = F)
 ```
 
 ## Introduction
@@ -14,3 +14,168 @@ knitr::opts_chunk$set(echo = TRUE)
 This code is the result of working with the University of Wisconsin at La Crosse and the USGS for a summer 2020 REU (Research Experience for Undergraduates). This group is concerned primarily with characterizing and understanding phytoplankton communities of the Upper Mississippi River System by analyzing data provided by the USGS and UMRR (Upper Mississippi River Restoration program). 
 
 Code in this document was created by myself (James Pack). The other document with cleaned code was created by Lamia Benyamine, and the combined code and results were used in presentation to the USGS, USACE, and others. Work on a manuscript to submit for publication is ongoing.
+
+
+## Research
+
+Little research has been conducted on the phytoplankton of the UMRS. As such, we begin with a larger question and break the work into three pieces. 
+
+"What are the main factors shaping the phytoplankton communities of the UMRS?"
+
+After forming this question, we were able to create three shorter questions that will come together to answer our main research question. They are:
+
+1. "How does phytoplankton biovolume and diversity vary across time and space?"
+2. "What environmental and physical drivers characterize the six pools in the data?"
+3. "How are phytoplankton taxa affected by changes in the environment?"
+
+Each of the three smaller questions were tackled with slightly different approaches, and so will be answered with different chunks of code below. Brief interpretations of results as well as references to Lamia's code will be included in this document. Ideally this will ensure future work will be a direct continuation of the work compiled in the two documents. 
+
+
+## Data Cleaning
+
+The first step for all of my analyses was to load all libraries to be used and to clean and arrange the data for easy analysis later. For this, very little was changed week to week and instead the same code was reused with small additions as new variables were calculated and used in analysis. 
+
+```{r loading libraries}
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(ggthemes)
+library(dplyr)
+library(RColorBrewer)
+library(CCA)
+library(CCP)
+library(vegan)
+```
+
+```{r loading data}
+phytos_9606 <- read_csv('Phytos_1996-2006.csv')
+phytos_0812 <- read_csv('Phytos_2008-2012.csv')
+phyto_info <- read_csv('Phyto_info_WQdata.csv')
+
+# Combining data from all time periods
+phytos_whole <- phytos_9606 %>% bind_rows(phytos_0812)
+
+# Adding water quality data, joined by SHEETBAR (ID) of sample
+phyto <- phytos_whole %>% left_join(phyto_info,by="SHEETBAR")
+
+# Cleaning the dates
+phyto <- phyto %>% mutate(DATE=mdy(DATE))
+phyto_info <- phyto_info %>% mutate(DATE=mdy(DATE))
+```
+
+After the data was loaded, metrics for the community were loaded to prepare for analysis. 
+
+```{r calculating metrics}
+# Richness
+phyto <- left_join(phyto,phyto %>%
+                     count(SHEETBAR),by='SHEETBAR') %>% 
+  rename(tot_rich=n)
+# Total Abundance
+total <- phyto %>% group_by(SHEETBAR) %>% 
+  summarize(total_abundance = sum(`TOTAL BV_um3L`))
+phyto <- left_join(phyto,total,by='SHEETBAR')
+
+# N:P ratio
+np_ratio <- phyto_info %>% select(c(SHEETBAR,TN,TP)) %>% na.omit() %>% 
+  mutate(np_ratio = TN/TP) %>%  # four observations missing here
+  select(c(SHEETBAR,np_ratio))
+phyto <- phyto %>% left_join(np_ratio,by='SHEETBAR')
+
+## Taxa Abundance
+# Cyanobacteria Abundance
+cyan_abundance <- phyto %>% filter(DIVISION == 'Cyanobacteria') %>% 
+  group_by(SHEETBAR) %>% 
+  summarize(cyan_abund = sum(`TOTAL BV_um3L`))
+phyto <- left_join(phyto,cyan_abundance,by='SHEETBAR')
+phyto <- phyto %>% mutate(case_when(is.na(cyan_abund) == T ~ 0))
+phyto <- phyto %>% mutate(rel_cyan = cyan_abund/total_abundance * 100)
+
+# Bacillariophyta Abundance
+bacill_abundance <- phyto %>% 
+  filter(DIVISION == 'Bacillariophyta') %>% 
+  group_by(SHEETBAR) %>% 
+  summarize(bacill_abund = sum(`TOTAL BV_um3L`))
+phyto <- left_join(phyto,bacill_abundance,by='SHEETBAR')
+phyto <- phyto %>% mutate(case_when(is.na(bacill_abund) == T ~ 0))
+phyto <- phyto %>% mutate(rel_bacill = bacill_abund/total_abundance * 100)
+
+# Chlorophyta Abundance
+chlor_abundance <- phyto %>% 
+  filter(DIVISION == 'Chlorophyta') %>% 
+  group_by(SHEETBAR) %>% 
+  summarize(chlor_abund = sum(`TOTAL BV_um3L`)) 
+phyto <- left_join(phyto,chlor_abundance,by='SHEETBAR')
+phyto <- phyto %>% mutate(case_when(is.na(chlor_abund) == T ~ 0))
+phyto <- phyto %>% mutate(rel_chloro = chlor_abund/total_abundance * 100)
+
+# Cryptophyta Abundance
+crypt_abundance <- phyto %>% 
+  filter(DIVISION == 'Cryptophyta') %>% 
+  group_by(SHEETBAR) %>% 
+  summarize(crypt_abund = sum(`TOTAL BV_um3L`))
+phyto <- left_join(phyto,crypt_abundance,by='SHEETBAR')
+phyto <- phyto %>% mutate(case_when(is.na(crypt_abund) == T ~ 0))
+phyto <- phyto %>% mutate(rel_crypt = crypt_abund/total_abundance * 100)
+
+# Pyrrophyta Abundance
+pyrr_abundance <- phyto %>% 
+  filter(DIVISION == 'Pyrrophyta') %>% 
+  group_by(SHEETBAR) %>% 
+  summarize(pyrr_abund = sum(`TOTAL BV_um3L`))
+phyto <- left_join(phyto,pyrr_abundance,by='SHEETBAR')
+phyto <- phyto %>% mutate(case_when(is.na(pyrr_abund) == T ~ 0))
+phyto <- phyto %>% mutate(rel_pyrr = pyrr_abund/total_abundance * 100)
+
+# Chrysophyta Abundance
+chrys_abundance <- phyto %>% 
+  filter(DIVISION == 'Chrysophyta') %>% 
+  group_by(SHEETBAR) %>% 
+  summarize(chrys_abund = sum(`TOTAL BV_um3L`))
+phyto <- left_join(phyto,chrys_abundance,by='SHEETBAR')
+phyto <- phyto %>% mutate(case_when(is.na(chrys_abund) == T ~ 0))
+phyto <- phyto %>% mutate(rel_chrys = chrys_abund/total_abundance * 100)
+
+# Euglenophyta Abundance
+eug_abundance <- phyto %>% 
+  filter(DIVISION == 'Euglenophyta') %>% 
+  group_by(SHEETBAR) %>% 
+  summarize(eug_abund = sum(`TOTAL BV_um3L`))
+phyto <- left_join(phyto,eug_abundance,by='SHEETBAR')
+phyto <- phyto %>% mutate(case_when(is.na(eug_abund) == T ~ 0))
+phyto <- phyto %>% mutate(rel_eug = eug_abund/total_abundance * 100)
+
+# Creating a table of only abundances
+abundances <- phyto %>% 
+  select(SHEETBAR,total_abundance,
+         cyan_abund,bacill_abund,chlor_abund,crypt_abund,
+         pyrr_abund,chrys_abund,eug_abund)
+abundances$cyan_abund <- abundances$cyan_abund %>% replace_na(0)
+abundances$bacill_abund <- abundances$bacill_abund %>% replace_na(0)
+abundances$chlor_abund <- abundances$chlor_abund %>% replace_na(0)
+abundances$crypt_abund <- abundances$crypt_abund %>% replace_na(0)
+abundances$pyrr_abund <- abundances$pyrr_abund %>% replace_na(0)
+abundances$chrys_abund <- abundances$chrys_abund %>% replace_na(0)
+abundances$eug_abund <- abundances$eug_abund %>% replace_na(0)
+abundances <- abundances %>% 
+  group_by(SHEETBAR) %>% 
+  summarize(total_abundance = unique(total_abundance),
+            cyan_abund = unique(cyan_abund),
+            bacill_abund = unique(bacill_abund),
+            chlor_abund = unique(chlor_abund),
+            crypt_abund = unique(crypt_abund),
+            pyrr_abund = unique(pyrr_abund),
+            chrys_abund = unique(chrys_abund),
+            eug_abund = unique(eug_abund))
+
+# Simpson's D Index of Diversity
+phyto <- phyto %>% group_by(SHEETBAR) %>% 
+  mutate(rel_abund = `TOTAL BV_um3L`/total_abundance) %>% 
+  mutate(simps_d = 1-sum(rel_abund ^ 2))
+```
+
+
+
+
+
+
+
