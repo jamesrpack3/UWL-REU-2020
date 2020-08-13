@@ -174,6 +174,133 @@ phyto <- phyto %>% group_by(SHEETBAR) %>%
 ```
 
 
+## Phytoplankton Communities
+
+Our first research question focuses on the phytoplankton communities themselves. For this portion of the analysis, Lamia created most of the graphics. These graphics will be included in her document in the repository entitled "____" in the section "____". Below are the additions I had for this level of analysis, as well as what can be gathered from these analyses.
+
+```{r biovolume trends}
+phyto %>% ggplot(aes(DATE,total_abundance/1e9)) +
+  geom_point() +
+  geom_smooth(method=loess) +
+  scale_y_log10() +
+  ggtitle('Biovolume Over Time') +
+  xlab('Date') +
+  ylab('Biovolume (mm^3/L)') +
+  theme_bw()
+```
+
+Biovolume remains mostly constant when looked at on a log scale. Some low points were observed in the later years but otherwise biovolume remained somewhat constant on the log scale. 
+
+```{r diversity trends}
+phyto %>% filter(is.na(FLDNUM) == F) %>% 
+  ggplot(aes(DATE,simps_d)) +
+  geom_point() +
+  geom_smooth(method = loess) +
+  ggtitle("Diversity Over Time") +
+  xlab('Date') +
+  ylab("Simpson's D Index Score") +
+  theme_bw() +
+  theme(axis.title=element_text())
+```
+
+An important aspect of the phytoplankton communities is the diversity of species. Communities made up of many species are healthier and more sustainable, while a community dominated by fewer species is less stable. We’ve used Simpson’s D Index as a measure of diversity for the phytoplankton communities, with scores near 1 representing the most diverse and scores near 0 representing the least diverse communities. All six stations had a wide range of scores, with the widest and narrowest ranges differing only by  0.15. Using a loess smoother, there seemed to be an upward trend in the later years, but in those same years the range of scores also increased with the lowest scores observed in 2012.
+
+For more specific breakdowns of trends in the communities, refer to Lamia's document as it has much more details on the difference in community composition both over time and across stations. In addition to a qualitative analysis of composition, Lamia has also conducted NMDS and ANOSIM to better understand the differences in community composition.
+
+## Characterizing the Environment
+
+Characterizing the environment was the second objective we set for ourselves in the research endeavor. Understanding what made the six stations unique allows us to better understand what might cause the differences in community composition. For this, we chose to use CAP (Canonical Analysis of Principal Coordinates) over PCA (Principal Component Analysis) so that we could choose a non-Euclidean distance metric. With this advantage, we chose the Mahalanobis distance in order to minimize the impact outliers may have on the results. The Mahalanobis distance uses a point and a distribution to judge distance instead of two points. This allows for observations to be grouped into a distribution and a similar distance created for all points, not allowing for outliers to produce outliers in scores of the analysis.
+
+```{r CAP}
+water_data <- phyto_info %>% 
+  select(SHEETBAR,FLDNUM,TN,TP,DO,SI,TEMP,TURB) %>% 
+  mutate(np_ratio = TN/TP) %>% 
+  select(SHEETBAR,FLDNUM,DO,SI,TEMP,TURB,np_ratio)
+
+abund_info <- phyto %>% 
+  select(SHEETBAR,total_abundance,rel_cyan,rel_bacill,rel_chloro,
+         rel_crypt,rel_pyrr,rel_chrys,rel_eug) %>% 
+  group_by(SHEETBAR) %>% 
+  summarize(total_abund = unique(total_abundance),
+            cyan_abund = unique(rel_cyan), 
+            bacill_abund = unique(rel_bacill), 
+            chlor_abund = unique(rel_chloro),
+            crypt_abund = unique(rel_crypt),
+            pyrr_abund = unique(rel_pyrr),
+            chrys_abund = unique(rel_chrys),
+            eug_abund = unique(rel_eug))
+
+# fixing the NAs everywhere
+abund_info[3:9][is.na(abund_info[3:9])] <- 0
+
+community <- water_data %>%
+  left_join(abund_info,by='SHEETBAR') %>% 
+  na.omit() # 176 observations intact, so 4 missing
+
+
+water_quality <- water_data[,-c(1,2)] %>% scale() %>% as_tibble() %>% na.omit()
+species <- community[6:14] %>% scale()
+community.cap <- capscale(species ~ .,
+                            data=water_quality,
+                            distance='mahalanobis')
+plot(community.cap)
+community.cap$CCA$biplot
+summary(community.cap)
+
+# plotting it better 
+# I want the arrows generic plot had had
+vector_points <- community.cap$CCA$biplot %>% as_tibble()
+do_vector <- vector_points[1,1:2]
+si_vector <- vector_points[2,1:2]
+temp_vector <- vector_points[3,1:2]
+turb_vector <- vector_points[4,1:2]
+np_vector <- vector_points[5,1:2]
+
+scale_vector <- .55
+x <- c(vector_points[1,1], si_vector[1,1], temp_vector[1,1], 
+       turb_vector[1,1], np_vector[1,1]) %>% as.numeric() * scale_vector
+y <- c(vector_points[1,2], si_vector[1,2], temp_vector[1,2], 
+       turb_vector[1,2], np_vector[1,2]) %>% as.numeric() * scale_vector
+coords <- cbind(x,y) %>% data.frame()
+
+my_colors <- c("Orange", "Goldenrod", "Yellow", "Blue","Violet","Navy")
+
+community.cap$CCA$biplot %>% print()
+
+as_tibble(community.cap$CCA$wa) %>% ggplot(aes(CAP1,CAP2)) +
+  geom_jitter(aes(color=ordered_stations)) +
+  xlim(-.75,.25) +
+  ylim(-.5,.75) +
+  scale_color_manual(values=my_colors) +
+  theme_bw() +
+  geom_segment(x=0,y=0,xend=coords$x[1],yend=coords$y[1],
+               alpha=.5,size=.1,
+               arrow=arrow(angle=25,length=unit(.1,'inches'))) +
+  geom_label(x=coords$x[1]+.025,y=coords$y[1]+.06,label='DO') +
+  geom_segment(x=0,y=0,xend=coords$x[2],yend=coords$y[2],
+               alpha=.5,size=.1,
+               arrow=arrow(angle=25,length=unit(.1,'inches'))) +
+  geom_label(x=coords$x[2]+.06,y=coords$y[2],label='SI') +
+  geom_segment(x=0,y=0,xend=coords$x[3],yend=coords$y[3],
+               alpha=.5,size=.1,
+               arrow=arrow(angle=25,length=unit(.1,'inches'))) +
+  geom_label(x=coords$x[3],y=coords$y[3]-.06,label='TEMP') +
+  geom_segment(x=0,y=0,xend=coords$x[4],yend=coords$y[4],
+               alpha=.5,size=.1,
+               arrow=arrow(angle=25,length=unit(.1,'inches'))) +
+  geom_label(x=coords$x[4]-.1,y=coords$y[4],label='TURB') +
+  geom_segment(x=0,y=0,xend=coords$x[5],yend=coords$y[5],
+               alpha=.5,size=.1,
+               arrow=arrow(angle=25,length=unit(.1,'inches'))) +
+  geom_label(x=coords$x[5],y=coords$y[5]+.06,label='N:P') +
+  ggtitle('CAP') +
+  xlab('CAP1: Low Turbidity (38%)') +
+  ylab('CAP2: High N:P Ratio (38%)') +
+  labs(color='Pool')
+```
+
+There is a separation between the upper (orange/yellow) and lower (blue/purple) stations when characterizing the environmental factors. N:P ratio, dissolved oxygen, and turbidity were most important, with temperature and silica playing a lesser role in separating the stations. 
+
 
 
 
