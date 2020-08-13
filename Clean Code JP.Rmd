@@ -1,0 +1,16 @@
+---
+title: "REU 2020 Cleaned Code"
+author: "James Pack"
+date: "8/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This code is the result of working with the University of Wisconsin at La Crosse and the USGS for a summer 2020 REU (Research Experience for Undergraduates). This group is concerned primarily with characterizing and understanding phytoplankton communities of the Upper Mississippi River System by analyzing data provided by the USGS and UMRR (Upper Mississippi River Restoration program). 
+
+Code in this document was created by myself (James Pack). The other document with cleaned code was created by Lamia Benyamine, and the combined code and results were used in presentation to the USGS, USACE, and others. Work on a manuscript to submit for publication is ongoing.
