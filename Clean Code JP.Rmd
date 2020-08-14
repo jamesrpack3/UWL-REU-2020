@@ -299,8 +299,199 @@ as_tibble(community.cap$CCA$wa) %>% ggplot(aes(CAP1,CAP2)) +
   labs(color='Pool')
 ```
 
-There is a separation between the upper (orange/yellow) and lower (blue/purple) stations when characterizing the environmental factors. N:P ratio, dissolved oxygen, and turbidity were most important, with temperature and silica playing a lesser role in separating the stations. 
+There is a separation between the upper (orange/yellow) and lower (blue/purple) stations when characterizing the environmental factors. N:P ratio, dissolved oxygen, and turbidity were most important, with temperature and silica playing a lesser role in separating the stations. These important factors can now be considered when we move to our third question.
 
+
+## Phytoplankton and the Environment
+
+Our final research objective was to better understand the relationship between phytoplankton communities of the UMRS and their environments. Our previous work using CAP allowed us to identify the significant environmental factors: turbidity, temperature, silica, dissolved oxygen, and the nitrogen to phosphorous ratio. Knowing this, we turned to Canonical Correlation Analysis (CCA) to understand how these characterizing factors affected the phytoplankton communities.
+
+CCA constructs canonical dimensions and then allows for the correlations between a set of X variables (the environmental factors in our case) and a set of Y variables (the phytoplankton taxa biovolume). This allows for significant dimensions to be created and then to look at the loadings of the dimension to see what effect the environment has on the phytoplankton communities. This is similar to a regression model, but allows for multiple predictor variables and multiple response variables. For this research, we were able to see how specific phytoplankton taxa react to different environmental conditions. 
+
+To conduct this analysis, I constructed a different dataset from the existing ones in order to more easily isolate the variables of interest.
+
+```{r preparing CCA}
+# Phytoplankton Taxa Abundance
+abundances <- phyto %>% 
+  select(SHEETBAR,total_abundance,
+         cyan_abund,bacill_abund,chlor_abund,crypt_abund,
+         pyrr_abund,chrys_abund,eug_abund)
+abundances$cyan_abund <- abundances$cyan_abund %>% replace_na(0)
+abundances$bacill_abund <- abundances$bacill_abund %>% replace_na(0)
+abundances$chlor_abund <- abundances$chlor_abund %>% replace_na(0)
+abundances$crypt_abund <- abundances$crypt_abund %>% replace_na(0)
+abundances$pyrr_abund <- abundances$pyrr_abund %>% replace_na(0)
+abundances$chrys_abund <- abundances$chrys_abund %>% replace_na(0)
+abundances$eug_abund <- abundances$eug_abund %>% replace_na(0)
+abundances <- abundances %>% 
+  group_by(SHEETBAR) %>% 
+  summarize(total_abundance = unique(total_abundance),
+            cyan_abund = unique(cyan_abund),
+            bacill_abund = unique(bacill_abund),
+            chlor_abund = unique(chlor_abund),
+            crypt_abund = unique(crypt_abund),
+            pyrr_abund = unique(pyrr_abund),
+            chrys_abund = unique(chrys_abund),
+            eug_abund = unique(eug_abund))
+
+# Environmental Factors
+environment <- phyto_info %>% 
+  select(SHEETBAR,FLDNUM,TN,TP,DO,SI,TEMP,TURB) %>% 
+  mutate(np_ratio = TN/TP) %>% 
+  select(SHEETBAR,FLDNUM,DO,SI,TEMP,TURB,np_ratio) %>% 
+  na.omit() # missing 4 observations
+
+# Joining the data
+community <- environment %>% 
+  group_by(SHEETBAR) %>% 
+  left_join(abundances %>%
+              group_by(SHEETBAR),by='SHEETBAR')
+community$SHEETBAR <- as_factor(community$SHEETBAR)
+
+# Initial Correlations & X/Y setup
+explanatory <- community %>% 
+  group_by(SHEETBAR) %>% 
+  select(TURB,np_ratio,DO,TEMP,SI)
+response <- community %>% 
+  group_by(SHEETBAR) %>% 
+  select(bacill_abund,cyan_abund,chlor_abund,crypt_abund,
+         pyrr_abund)
+
+matcor(explanatory[,-c(1)],response[,-c(1)])$XYcor[6:10,1:5]
+img.matcor(matcor(explanatory[,-c(1)],response[,-c(1)]),type=1)
+```
+
+After preparing the data and looking at the different initial correlations, CCA can be conducted to better understand the relationships in the data.
+
+```{r CCA analysis, interpretation, and plotting}
+# CCA
+# thanks to https://stats.idre.ucla.edu/r/dae/canonical-correlation-analysis/
+cc1 <- cc(explanatory[,-c(1)],response[,-c(1)])
+
+# Checking the significance
+rho <- cc1$cor
+n <- dim(explanatory[,-1])[1]
+p <- length(explanatory[,-1])
+q <- length(response[,-1])
+
+p.asym(rho, n, p, q,tstat='Wilks')
+
+# Standardizing environmental coefficients
+s1 <- diag(sqrt(diag(cov(explanatory[,-1]))))
+s1 %*% cc1$xcoef
+
+# Standardizing phytoplankton coefficients
+s2 <- diag(sqrt(diag(cov(response[,-1]))))
+s2 %*% cc1$ycoef
+
+# Plotting the X/Y results for 2 significant dimensions
+ordered_stations <- factor(environment$FLDNUM)
+my_colors <- c("Orange", "Goldenrod", "Yellow", "Blue","Violet","Navy")
+
+cca_x_scores <- cc1[5]$scores$xscores %>% 
+  as_tibble()
+cca_x_scores %>% 
+  ggplot(aes(V1,V2)) +
+  geom_jitter(aes(color=ordered_stations)) +
+  scale_color_manual(values=my_colors) +
+  theme_clean() +
+  ggtitle('CCA Scores of Environmental Conditions') +
+  xlab('DO & N:P Ratio') +
+  ylab('Temperature') + 
+  labs(color='Pool')
+cca_y_scores <- cc1[5]$scores$yscores %>% 
+  as_tibble()
+cca_y_scores %>% 
+  ggplot(aes(V1,V2)) +
+  geom_jitter(aes(color=ordered_stations)) +
+  scale_color_manual(values=my_colors) +
+  theme_clean() +
+  ggtitle('CCA Scores of Community Composition') +
+  xlab('Diatom Abundance') +
+  ylab('Cyanobacteria Abundance') + 
+  labs(color='Pool')
+
+img.matcor(matcor(explanatory[,-c(1)],response[,-c(1)]),type=1)
+```
+
+
+Variable 1:
+  X: High DO, high N:P, low TURB, low TEMP, low SI
+  Y: High diatom, moderately high others
+  XY: Same as X
+  YY: Same as Y
+Variable 2:
+  X: High TEMP, high SI, moderately low others
+  Y: Low diatoms, high cyano, moderately high others
+  XY: Same as X
+  YY: Same as Y
+Variable 3:
+  X: Low TEMP, high SI, high TURB, high N:P,moderately high DO
+  Y: Low chlorophyta, everything else negligible
+  XY: Same as X
+  YY: Low chlorophyta, high cryptophyta
+  
+Variates 3 through 5 are insignificant at the alpha = .05 level, so only variates 1 and 2 are significant for further consideration. 
+
+First loading again emphasizes DO but now also emphasizes TEMP. Second loading emphasizes DO, TEMP, and SI, with a negative loading for N:P. 
+
+Once again, first loading emphasizes diatoms even when standardized, second loading emphasizes a rise in cyanobacteria and drop in diatoms. Other biovolumes are minimally related to loadings when standardized. 
+
+
+## Script from Presentation
+
+In addition to all analyses and notes from the summer gathered above, below I have copied the script used for my portion of the slides that narrates the story we have attempted to tell with our analyses.
+
+
+RESEARCH QUESTIONS
+
+What are the main factors shaping the phytoplankton communities of the UMR?
+1. communities
+2. environment
+3. communities & environment
+
+
+DATA
+
+In order to conduct our study of phytoplankton in the Upper Mississippi River System, we have worked with data collected by the USGS and the Upper Mississippi River Restoration program…. (you know the rest)
+
+METHODS 
+
+To better understand phytoplankton communities in the UMR, we’ve focused on our three research questions questions: What phytoplankton are being observed, what does their environment look like, and how are the phytoplankton related to their environment? Each of these questions requires a slightly different approach that will help us to better understand changes in phytoplankton communities.
+
+We first examined the relative abundance of phytoplankton divisions in order to better understand the changes within communities. By visualizing the data, we were able to identify trends in the data across both space and time. We then used Nonmetric Multidimensional Scaling, or NMDS, to better understand how the composition of the communities differed station to station. In addition, we used ANOSIM, or analysis of similarities, to make sure that the trends were significant.
+
+Next, to make sense of the environmental conditions at each station, we used Canonical Analysis of Principal Coordinates, or CAP, to see which factors best differentiated the six stations. This, combined with what we learned from the examination of the communities, let us know which environmental factors could be most influential in shaping the phytoplankton communities.
+
+Finally, after identifying the significant environmental factors that varied across stations, we used Canonical Correlation Analysis, or CCA, to see how these factors were correlated with the divisions of phytoplankton observed. This final step allows us to understand what environmental factors are shaping the phytoplankton communities.
+
+
+DIVERSITY I
+
+An important aspect of the phytoplankton communities is the diversity of species. Communities made up of many species are healthier and more sustainable, while a community dominated by fewer species is less stable. We’ve used Simpson’s D Index as a measure of diversity for the phytoplankton communities, with scores near 1 representing the most diverse and scores near 0 representing the least diverse communities. All six stations had a wide range of scores, with the widest and narrowest ranges differing only by  0.15. Using a loess smoother, there seemed to be an upward trend in the later years, but in those same years the range of scores also increased with the lowest scores observed in 2012. Our next step is to look into how each station differs in its phytoplankton community composition.
+
+
+CAP
+
+Our second research objective was to better understand how the environmental factors vary across the six field stations. Because the stations were spread across hundreds of miles, the differences in phytoplankton community composition are in part explained by the varying environmental conditions at these stations. To characterize the conditions, the 181 samples were analyzed with CAP to see which factors differentiated the stations. We chose the Mahalanobis distance metric because it takes into account the variance of the factors, lessening the impact of the outliers noticed in turbidity.
+
+The graph on the right show the results of this analysis. Along the X axis we have a component defined by low turbidity, high dissolved oxygen, and a high nitrogen to phosphorus ratio explaining 38% of the variance in environmental data. On the Y axis another 38% of the variance is explained by a high nitrogen to phosphorus ratio, high dissolved oxygen levels, and low temperatures. By coloring each point according to its location, a pattern emerges. The oranges and yellow represent the upper stations on the right side of the graph, while the purples and pink represent the lower stations on the left side of the graph. This separation seems to depend on turbidity, with a smaller emphasis on the nitrogen to phosphorus ratio and dissolved oxygen levels. The separation between the upper and lower stations also suggests that the joining of the Illinois and Mississippi River at station 4 plays some part in this distinction. Our next step is to see how the five factors seen in this graph are related to the phytoplankton communities.
+
+
+
+CCA
+
+Finally, we want to know how the phytoplankton communities interact with their environment. For this, we used CCA, a dimension reduction technique, to understand which factors were most influential in shaping phytoplankton communities. Five canonical dimensions were constructed, and the first two were significant. The first dimension was similar to the separation in our CAP analysis with high dissolved oxygen and nitrogen to phosphorus ratio defining the environmental variables. Overall, the community increased in biovolume, but diatoms thrived more than other phytoplankton taxa. The second dimension emphasized temperature and silica concentrations. For this dimension, there was a decrease in diatoms and an increase in cyanobacteria.However, turbidity was not an influential factor in these two dimensions. While it was a characterizing factor for the environmental conditions, it was less important in the relationships with phytoplankton communities.
+
+Comparing these results to the initial correlation heat map shown on the right, it seems that diatoms have much stronger responses to changes in the environment than other divisions of phytoplankton. 
+
+The bottom left corner shows the correlation between phytoplankton taxa and the environmental factors we considered.
+
+This top row shows the correlations for diatoms specifically. The reds and blues are at either end of the spectrum, showing stronger positive and negative correlations respectively.
+
+The second row shows the correlations for cyanobacteria. Compared to the diatoms, these correlations are more neutral, represented by the shades of green. This helps to explain why cyanobacteria increase when diatoms decrease: although the temperature may not be strongly correlated with cyanobacteria abundance, the loss of diatoms allows for other phytoplankton to flourish in their place. Similar conclusions might also be drawn about the nitrogen to phosphorus ratio and the dissolved oxygen levels; when diatoms are met with unfavorable conditions, other phytoplankton are able to flourish. 
+
+The previous importance of turbidity, the column furthest to the left, can also contribute as it negatively affects all phytoplankton, but other conditions in the environment still allow for diatoms or cyanobacteria or other phytoplankton taxa to grow in relative abundance. 
 
 
 
