@@ -263,6 +263,7 @@ y <- c(vector_points[1,2], si_vector[1,2], temp_vector[1,2],
        turb_vector[1,2], np_vector[1,2]) %>% as.numeric() * scale_vector
 coords <- cbind(x,y) %>% data.frame()
 
+ordered_stations <- factor(community$FLDNUM)
 my_colors <- c("Orange", "Goldenrod", "Yellow", "Blue","Violet","Navy")
 
 community.cap$CCA$biplot %>% print()
