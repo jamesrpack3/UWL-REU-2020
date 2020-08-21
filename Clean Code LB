@@ -1,0 +1,153 @@
+---
+title: "REU 2020 Cleaned Code_ LBenyamine"
+author: "Lamia Benyamine"
+data: "8/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+```{r loading libraries, include=FALSE}
+library(readr)
+library(lattice)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(ggthemes)
+library(vegan)
+library(goeveg)
+library(GGally)
+```
+
+## Methods
+
+1. Phytoplankton Communities
+  -Visualization of phytoplankton community composition
+  -Nonmetric Multidimensional Scaling (NMDS) of species community
+  -Analysis of Similarity (ANOSIM) of species
+2. Environmental Factors
+  -Canonical Analysis of Principal Coordinates (CAP) of environmental factors
+3. Phytoplankton and the Environment
+  -Canonical Correlation Analysis (CCA) of environmental factors
+  
+James will further discuss the methods and results used for points 2 and 3. 
+## Data Cleaning
+
+In the beginning, we worked to clean the data. I then saved it as a separate csv file in order to easily access it. 
+
+```{r loading data, echo=FALSE}
+phyto_9606 <- read_csv('Phytos_1996-2006.csv')
+phyto_0812 <- read_csv('Phytos_2008-2012.csv')
+phyto_info <- read_csv('Phyto_info_WQdata.csv')
+
+# Combining data from all the time periods
+phyto_all <-phyto_9606 %>% bind_rows(phyto_0812)
+
+# Combine data with site information
+phyto<- phyto_all %>% left_join(phyto_info, by= "SHEETBAR")
+
+# Clean the data, by changing the Date from a character to number
+phyto$DATE <-phyto$DATE %>%  mdy() 
+
+#3134 rows, 45 columns
+write.csv(phyto,'Phyto_All Data.csv')
+
+phyto <- read_csv('Phyto_All Data.csv')
+
+#I added a separate column for th year and made the biovolume metric smaller
+phyto_data<- mutate(phyto,year = year(DATE), month = month(DATE),) %>% 
+  rename(BIOMASS='TOTAL BV_um3L') %>% mutate(BIOVOLUME=BIOMASS*.0000001) 
+```
+
+#Phytoplankton Communities
+
+We viewed trends in diversity using biovolume for abundance. There were six divisions of phytoplankton observed withing the UMR. This was calculated using percentage of biovolume of each division. 
+
+Over time
+  -Communities are over 75% concentrated by diatoms in orange and cyanobacteria in pink.
+  -There is a decrease in biodiversity over time, diatoms compose over 60% of the spiece composition, and other divisions seem to dwindle. 
+  
+Field Station
+  -Diversity is higher in the upper stations
+  -Cyanobacteria is mainly present in the upper stations with over 15% specie composition, and only 5% in the lower stations. 
+  -Diatoms compose over 85% in the lower stations. 
+
+```{r Composition of Biovolume}
+#Filtering out to show the summer months, to be consistant will all of the data
+phyto_bio <- phyto_data %>% filter(1996<=year&year<=2012,month==7|month==8)
+# A simple color pallet that takes into account color blindness
+cbp2 <- c("#E69F00", "#000000", "#0072B2", "#F0E442","#999999","#CC79A7")
+
+#Composition of Biovolume over time
+phyto_bio %>% 
+  ggplot(aes(fill=factor(DIVISION,levels=c("Bacillariophyta","Pyrrophyta", "Chlorophyta", "Chrysophyta", "Cryptophyta","Euglenophyta", "Cyanobacteria")), y=BIOVOLUME, x=year))+
+  geom_bar(position='fill', stat='identity')+ xlab("Year")+ ylab("Percentage of Biovolume")+ 
+  theme(legend.title="Division")+   scale_x_continuous(breaks=seq(1996,2012,2))+
+  theme_bw(base_size=20)+scale_y_continuous(labels=scales::percent_format()) + 
+  ggtitle("Composition of Biovolume Over Time (%)")+
+  scale_fill_manual(values = cbp2) + labs(fill="Division")
+
+#Composition of Biovolume by field station
+phyto_bio %>% 
+  ggplot(aes(fill=factor(DIVISION,levels=c("Bacillariophyta","Pyrrophyta", "Chlorophyta", "Chrysophyta", "Cryptophyta","Euglenophyta", "Cyanobacteria")), y=BIOVOLUME, x=FLDNUM))+
+  geom_bar(position='fill', stat='identity')+ xlab("Field Station")+ labs(fill="Division") +
+  ylab("Percentage of Biovolume")+ theme(legend.title="Division")+ theme_bw(base_size=20)+  
+  scale_x_continuous(breaks=seq(1,6,1))+scale_y_continuous(labels=scales::percent_format()) + 
+  ggtitle("Composition of Biovolume by Field Station (%)") +scale_fill_manual(values = cbp2)
+```
+
+Qualitative Approach____
+We continue to look at phytoplankton communities by using Nonmetric Multidimensional Scaling (NMDS) of species community
+
+We used NMDS to contrast the specie composition across different field stations. Ordination plots arrange points so that the distance correlates to the similarity between samples
+
+The points are fairly scattered across the plot, but the lighter orange to yellow colors tend towards the left side of the plot which represents the upper stations. 
+
+```{r NMDS}
+#Data file containing a table of field stations on the left and the six Divisions on the horizontal
+ord<-read_csv('FLDvDivision.csv')
+#remove the FLDNUM, so only the Divisions are shown
+ord_comm<-ord[2:7] 
+
+#Checking the best dimension for this analysis based on the stress value
+dimcheckMDS(ord_comm) #we chose k=2 dimensions
+stressplot(phyto_ord.mds) #Displays that k=2 fits the data very well. R^2 = 0.981
+
+#Perform the NMDS function sing a bray curtis distance
+phyto_ord.mds <- metaMDS(comm = ord_comm, distance = "bray", trace = FALSE, autotransform = FALSE, k=2)
+#We remove the NA Values
+MDS_xy <- data.frame(phyto_ord.mds$points) %>% na.omit()
+MDS_xy$FLDNUM<-ord$FLDNUM
+phyto_ord.mds$FLDNUM<-ord$FLDNUM
+#Making the FLDNUM a vector so we can customize the color pallet
+Field_Stations <- factor(MDS_xy$FLDNUM)
+cbp2 <- c("Orange", "Goldenrod", "Yellow", "Blue","Violet","Navy")
+
+#Plotting the NMDS
+MDS_xy %>% 
+   ggplot(aes(MDS1,MDS2))+ xlab("Distance in Space")+ylab("Distance in Space")+ 
+   geom_jitter(aes(color=Field_Stations), size=5)+theme_bw(base_size=20) +
+   scale_color_manual(values=cbp2) +ggtitle("Spatial Community by Division")
+
+```
+
+Quantitative Approach___
+
+We used Analysis of Similarity (ANOSIM) to quantify the contrast in specie composition. 
+
+The significance value, P, is very low P= 0.001, meaning the field stations are significantly different. However, the R value is also very low R=0.11, indicating that the field stations are a very small factor in affecting specie composition. 
+
+```{r ANOSIM}
+#Using the same data in the NMDS, we take the ANSIM of the data
+ano<-anosim(ord[2:7], ord$FLDNUM, distance="bray")
+#This provides the statistics R and P, and the dissimilarity mareix
+summary(ano)
+#Another colorblind friendly pallet
+cbp3 <- c("Dark Green","#E69F00", "#000000", "#0072B2", "#F0E442","#999999","#CC79A7")
+#plotting the ANOSIM using field stations
+plot(ano,xlab="Field Stations",ylab="Dissimilarity Rank Value", col=cbp3)
+```
