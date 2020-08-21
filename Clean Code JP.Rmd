@@ -28,7 +28,7 @@ After forming this question, we were able to create three shorter questions that
 2. "What environmental and physical drivers characterize the six pools in the data?"
 3. "How are phytoplankton taxa affected by changes in the environment?"
 
-Each of the three smaller questions were tackled with slightly different approaches, and so will be answered with different chunks of code below. Brief interpretations of results as well as references to Lamia's code will be included in this document. Ideally this will ensure future work will be a direct continuation of the work compiled in the two documents. 
+Each of the three smaller questions were tackled with slightly different approaches, and so will be answered with different chunks of code below. Brief interpretations of results as well as references to Lamia's code will be included in this document ("Clean Code LB"). Ideally this will ensure future work will be a direct continuation of the work compiled in the two documents. 
 
 
 ## Data Cleaning
@@ -176,7 +176,7 @@ phyto <- phyto %>% group_by(SHEETBAR) %>%
 
 ## Phytoplankton Communities
 
-Our first research question focuses on the phytoplankton communities themselves. For this portion of the analysis, Lamia created most of the graphics. These graphics will be included in her document in the repository entitled "____" in the section "____". Below are the additions I had for this level of analysis, as well as what can be gathered from these analyses.
+Our first research question focuses on the phytoplankton communities themselves. For this portion of the analysis, Lamia created most of the graphics. These graphics will be included in her document in the repository entitled "UWL-REU-2020." Below are the additions I had for this level of analysis, as well as what can be gathered from these analyses.
 
 ```{r biovolume trends}
 phyto %>% ggplot(aes(DATE,total_abundance/1e9)) +
